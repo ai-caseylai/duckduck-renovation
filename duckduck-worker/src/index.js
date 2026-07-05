@@ -567,39 +567,290 @@ async function chatAPI(req, env) {
   const { message } = await req.json();
   if (!message || !message.trim()) return Response.json({ reply: '請輸入問題' });
 
-  // Get work order context
+  const msg = message.trim();
+  const today = new Date().toISOString().split('T')[0];
+
+  // ─── Intent detection ─────────────────────────────────────────────────
+  let extraContext = '';
+  let handled = false;
+  let directReply = '';
+
+  // Helper: extract project ID from message
+  const pidMatch = msg.match(/[A-Z]\d{10,12}/);
+  const projectId = pidMatch ? pidMatch[0] : null;
+
+  // Helper: extract client name
+  const clientMatch = msg.match(/[郭李陳張黃何林吳劉王]{1,2}(小姐|太|生|先生)/);
+  const clientName = clientMatch ? clientMatch[0] : null;
+
+  // Helper: extract date
+  const dateMatch = msg.match(/(\d{4}-\d{2}-\d{2})/);
+  const dateStr = dateMatch ? dateMatch[1] : null;
+
+  // ─── Execute tools based on intent ────────────────────────────────────
+
+  // Order detail lookup
+  if (projectId && (msg.includes('詳情') || msg.includes('搵') || msg.includes('查') || msg.includes('status') || msg.includes('狀態'))) {
+    const result = await executeTool(env, 'get_order_detail', { project_id: projectId });
+    extraContext = '工單詳情：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Client summary
+  else if (clientName && (msg.includes('消費') || msg.includes('總共') || msg.includes('電話') || msg.includes('地址') || msg.includes('俾錢') || msg.includes('付款'))) {
+    const result = await executeTool(env, 'get_client_summary', { name: clientName });
+    extraContext = '客戶摘要：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Client orders
+  else if (clientName && (msg.includes('工單') || msg.includes('單'))) {
+    const result = await executeTool(env, 'get_orders_by_client', { name: clientName });
+    extraContext = '客戶工單：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Unpaid / payment queries
+  else if (msg.includes('未收') || msg.includes('未付') || msg.includes('爭最多錢') || msg.includes('欠')) {
+    const result = await executeTool(env, 'get_unpaid_orders', {});
+    extraContext = '未收款工單：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Schedule for a specific date
+  else if (dateStr && (msg.includes('行程') || msg.includes('工單') || msg.includes('排程'))) {
+    const result = await executeTool(env, 'get_orders_by_date', { date: dateStr });
+    extraContext = '日期工單：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Upcoming schedule
+  else if (msg.includes('聽日') || msg.includes('未來') || msg.includes('排程') || msg.includes('行程') || msg.includes('星期') || msg.includes('禮拜')) {
+    let days = 7;
+    if (msg.includes('14') || msg.includes('兩週') || msg.includes('兩周')) days = 14;
+    if (msg.includes('30') || msg.includes('一個月')) days = 30;
+    const result = await executeTool(env, 'get_upcoming_orders', { days });
+    extraContext = '未來排程：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Revenue analysis
+  else if (msg.includes('營收') || msg.includes('收入') || msg.includes('賺') || msg.includes('月度') || msg.includes('本月') && (msg.includes('分析') || msg.includes('報告'))) {
+    const result = await executeTool(env, 'get_category_analysis', {});
+    const rev = await executeTool(env, 'get_revenue_by_month', {});
+    extraContext = '營收分析：\n類別：' + JSON.stringify(result, null, 2) + '\n月度：' + JSON.stringify(rev, null, 2);
+    handled = true;
+  }
+
+  // Category analysis
+  else if (msg.includes('類別') || msg.includes('維修') && (msg.includes('賺') || msg.includes('多') || msg.includes('分析'))) {
+    const result = await executeTool(env, 'get_category_analysis', {});
+    extraContext = '類別分析：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Client list
+  else if (msg.includes('客戶') && (msg.includes('名單') || msg.includes('幾多個') || msg.includes('列表') || msg.includes('邊個'))) {
+    const result = await executeTool(env, 'get_client_list', {});
+    extraContext = '客戶名單：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Search by address
+  else if (msg.includes('南昌街') || msg.includes('成林') || msg.includes('青衣') || msg.includes('南山') || msg.includes('石硤尾')) {
+    const kw = msg.match(/(南昌街|成林|灝景灣|青衣|南山邨|石硤尾|南安)/);
+    if (kw) {
+      const result = await executeTool(env, 'get_orders_by_address', { keyword: kw[0] });
+      extraContext = '地址工單：\n' + JSON.stringify(result, null, 2);
+      handled = true;
+    }
+  }
+
+  // High value
+  else if (msg.includes('最高') || msg.includes('最大') || msg.includes('金額最高')) {
+    const result = await executeTool(env, 'get_high_value_orders', { limit: 5 });
+    extraContext = '高額工單：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Order by status
+  else if (msg.includes('待處理') || msg.includes('已確認') || msg.includes('已完成') || msg.includes('已取消')) {
+    const st = msg.match(/(待處理|已確認|已完成|已取消)/);
+    if (st) {
+      const result = await executeTool(env, 'get_order_by_status', { status: st[0] });
+      extraContext = '狀態工單：\n' + JSON.stringify(result, null, 2);
+      handled = true;
+    }
+  }
+
+  // General search
+  else if (msg.includes('搵') || msg.includes('搜') || msg.includes('找')) {
+    const result = await executeTool(env, 'search_orders', { query: msg.replace(/搵|搜|找|幫我/g, '').trim().substring(0, 30) });
+    extraContext = '搜尋結果：\n' + JSON.stringify(result, null, 2);
+    handled = true;
+  }
+
+  // Handle action/command requests
+  else if (msg.includes('標記') || msg.includes('改為') || msg.includes('更新') || msg.includes('delete') || msg.includes('刪除')) {
+    directReply = '要更新工單狀態，請到網頁版工單列表點擊工單，或在工單詳情頁使用狀態按鈕。暫時唔支援透過 chatbot 直接修改。';
+    handled = true;
+  }
+
+  // ─── Get base stats context ───────────────────────────────────────────
   const stats = await env.DB.prepare('SELECT COUNT(*) as cnt, COALESCE(SUM(total_amount),0) as total FROM work_orders').first();
   const unpaid = await env.DB.prepare("SELECT COALESCE(SUM(total_amount),0) as u FROM work_orders WHERE payment_status='未付'").first();
-  const today = new Date().toISOString().split('T')[0];
-  const todayOrders = await env.DB.prepare("SELECT project_id, contact_name, address, time_slot FROM work_orders WHERE scheduled_date=? LIMIT 5").bind(today).all();
-  const upcoming = await env.DB.prepare("SELECT project_id, scheduled_date, time_slot, contact_name, address FROM work_orders WHERE scheduled_date >= ? ORDER BY scheduled_date LIMIT 5").bind(today).all();
+  const todayOrders = await env.DB.prepare("SELECT project_id, contact_name, address, time_slot, total_amount FROM work_orders WHERE scheduled_date=? LIMIT 10").bind(today).all();
 
-  const context = `你係 DUCKDUCK 裝修工程嘅 AI 助手。你服務嘅公司做裝修維修工程。請用繁體中文回答，語氣友善專業。
+  if (directReply) {
+    return Response.json({ reply: directReply });
+  }
 
-目前數據：
-- 總工單：${stats.cnt} 張
-- 總營收：$${stats.total.toLocaleString()}
-- 未收款：$${unpaid.u.toLocaleString()}
-${todayOrders.results.length ? '- 今日工單：' + todayOrders.results.map(o => `${o.project_id} (${o.contact_name}, ${o.address?.substring(0,10)})`).join('; ') : '- 今日無工單'}
-${upcoming.results.length ? '- 即將到來：' + upcoming.results.map(o => `${o.scheduled_date} ${o.project_id} (${o.contact_name})`).join('; ') : ''}
+  // ─── Build context and call AI ────────────────────────────────────────
+  let context = `你係 DUCKDUCK 裝修工程嘅 AI 助手。請用繁體中文回答，語氣友善專業，簡潔實用。
 
-請根據以上數據回答用戶問題。回答要簡潔實用。`;
+基本數據：
+- 總工單：${stats.cnt} 張 | 總營收：$${Number(stats.total).toLocaleString()} | 未收款：$${Number(unpaid.u).toLocaleString()}
+- 今日日期：${today}
+${todayOrders.results.length ? '- 今日工單：' + todayOrders.results.map(o => `${o.project_id} ${o.contact_name} ${o.time_slot||''} $${o.total_amount}`).join('; ') : '- 今日無工單'}
+`;
+
+  if (extraContext) {
+    // Truncate long results to prevent context overflow
+    if (extraContext.length > 3000) {
+      extraContext = extraContext.substring(0, 3000) + '\n...(truncated)';
+    }
+    context += '\n=== 數據庫查詢結果 ===\n' + extraContext + '\n\n請根據以上查詢結果回答用戶問題。';
+  }
 
   try {
-    const response = await env.AI.run('@cf/qwen/qwen3-30b-a3b-fp8', {
+    const response = await env.AI.run('@cf/meta/llama-3.2-3b-instruct', {
       messages: [
         { role: 'system', content: context },
         { role: 'user', content: message }
       ],
-      max_tokens: 500,
+      max_tokens: 600,
     });
-    return Response.json({ reply: response.response || '抱歉，我暫時無法回答' });
+
+    // Extract text from response (Qwen returns choices[0].message.content, may be null if reasoning)
+    let reply = response?.response || response?.choices?.[0]?.message?.content || '';
+    if (!reply && typeof response === 'string') reply = response;
+    if (!reply) reply = JSON.stringify(response);
+
+    return Response.json({ reply: reply || '抱歉，我暫時無法回答' });
   } catch (e) {
-    return Response.json({ reply: 'AI Error: ' + (e.message || e.stack || JSON.stringify(e)) });
+    return Response.json({ reply: 'AI Error: ' + (e.message || String(e)) });
   }
 }
 
-// ─── Page: Map + Calendar ─────────────────────────────────────────────────
+// ─── Tool Execution ───// ─── Tool Execution ──────────────────────────────────────────────────────
+async function executeTool(env, tool, params) {
+  const db = env.DB;
+  try {
+    switch (tool) {
+      case 'get_stats': {
+        const s = await db.prepare('SELECT COUNT(*) as cnt, COALESCE(SUM(total_amount),0) as total FROM work_orders').first();
+        const u = await db.prepare("SELECT COALESCE(SUM(total_amount),0) as u FROM work_orders WHERE payment_status='未付'").first();
+        const p = await db.prepare("SELECT COALESCE(SUM(total_amount),0) as p FROM work_orders WHERE payment_status='已付'").first();
+        const pending = await db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE status='待處理'").first();
+        const done = await db.prepare("SELECT COUNT(*) as c FROM work_orders WHERE status='已完成'").first();
+        return { total_orders: s.cnt, total_revenue: s.total, unpaid: u.u, paid: p.p, pending: pending.c, completed: done.c };
+      }
+      case 'get_order_detail': {
+        const pid = params.project_id;
+        if (!pid) return { error: '請提供工單編號' };
+        const o = await db.prepare('SELECT * FROM work_orders WHERE project_id=?').bind(pid).first();
+        if (!o) return { error: '找不到工單 ' + pid };
+        const items = await db.prepare('SELECT * FROM work_order_items WHERE work_order_id=? ORDER BY seq').bind(o.id).all();
+        return { ...o, items: items.results };
+      }
+      case 'get_orders_by_date': {
+        const date = params.date;
+        if (!date) return { error: '請提供日期' };
+        const rows = await db.prepare('SELECT project_id, contact_name, contact_phone, address, time_slot, total_amount, status, payment_status FROM work_orders WHERE scheduled_date=?').bind(date).all();
+        return { date, count: rows.results.length, orders: rows.results };
+      }
+      case 'get_orders_by_date_range': {
+        const { from, to } = params;
+        if (!from || !to) return { error: '請提供日期範圍' };
+        const rows = await db.prepare('SELECT project_id, contact_name, contact_phone, address, time_slot, scheduled_date, total_amount, status, payment_status FROM work_orders WHERE scheduled_date BETWEEN ? AND ? ORDER BY scheduled_date').bind(from, to).all();
+        return { from, to, count: rows.results.length, orders: rows.results };
+      }
+      case 'get_upcoming_orders': {
+        const days = parseInt(params.days) || 7;
+        const today = new Date().toISOString().split('T')[0];
+        const end = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
+        const rows = await db.prepare('SELECT project_id, contact_name, contact_phone, address, time_slot, scheduled_date, total_amount, status, payment_status FROM work_orders WHERE scheduled_date BETWEEN ? AND ? ORDER BY scheduled_date, time_slot').bind(today, end).all();
+        return { days, from: today, to: end, count: rows.results.length, orders: rows.results };
+      }
+      case 'get_orders_by_client': {
+        const name = params.name;
+        if (!name) return { error: '請提供客戶姓名' };
+        const rows = await db.prepare('SELECT * FROM work_orders WHERE contact_name LIKE ? ORDER BY scheduled_date DESC').bind('%' + name + '%').all();
+        const total = rows.results.reduce((s,o) => s + (o.total_amount||0), 0);
+        return { client: name, count: rows.results.length, total_spent: total, orders: rows.results };
+      }
+      case 'get_orders_by_address': {
+        const kw = params.keyword;
+        if (!kw) return { error: '請提供地址關鍵字' };
+        const rows = await db.prepare('SELECT project_id, contact_name, address, time_slot, scheduled_date, total_amount, status FROM work_orders WHERE address LIKE ? ORDER BY scheduled_date DESC').bind('%' + kw + '%').all();
+        return { keyword: kw, count: rows.results.length, orders: rows.results };
+      }
+      case 'get_unpaid_orders': {
+        const rows = await db.prepare("SELECT project_id, contact_name, contact_phone, address, scheduled_date, total_amount, status FROM work_orders WHERE payment_status='未付' ORDER BY scheduled_date DESC").all();
+        const total = rows.results.reduce((s,o) => s + (o.total_amount||0), 0);
+        return { count: rows.results.length, total_unpaid: total, orders: rows.results };
+      }
+      case 'get_client_list': {
+        const rows = await db.prepare("SELECT c.*, COUNT(wo.id) as order_count, COALESCE(SUM(wo.total_amount),0) as total_spent FROM contacts c LEFT JOIN work_orders wo ON c.phone=wo.contact_phone GROUP BY c.phone ORDER BY total_spent DESC").all();
+        return { count: rows.results.length, clients: rows.results };
+      }
+      case 'get_client_summary': {
+        const name = params.name;
+        if (!name) return { error: '請提供客戶姓名' };
+        const c = await db.prepare('SELECT * FROM contacts WHERE name LIKE ?').bind('%' + name + '%').first();
+        if (!c) return { error: '找不到客戶: ' + name };
+        const orders = await db.prepare('SELECT project_id, scheduled_date, total_amount, status, payment_status FROM work_orders WHERE contact_phone=? ORDER BY scheduled_date DESC').bind(c.phone).all();
+        const total = orders.results.reduce((s,o) => s + (o.total_amount||0), 0);
+        const unpaid = orders.results.filter(o => o.payment_status === '未付').reduce((s,o) => s + (o.total_amount||0), 0);
+        return { client: c, order_count: orders.results.length, total_spent: total, unpaid: unpaid, orders: orders.results };
+      }
+      case 'get_revenue_by_month': {
+        const rows = await db.prepare("SELECT SUBSTR(scheduled_date,1,7) as month, COUNT(*) as cnt, COALESCE(SUM(total_amount),0) as total FROM work_orders WHERE scheduled_date IS NOT NULL GROUP BY month ORDER BY month DESC LIMIT 12").all();
+        return { months: rows.results };
+      }
+      case 'get_category_analysis': {
+        const rows = await db.prepare("SELECT COALESCE(ii.description,'其他') as category, COUNT(DISTINCT wo.id) as cnt, COALESCE(SUM(ii.item_total),0) as total_revenue FROM work_order_items ii JOIN work_orders wo ON ii.work_order_id=wo.id GROUP BY category ORDER BY total_revenue DESC").all();
+        const grandTotal = rows.results.reduce((s,r) => s + r.total_revenue, 0);
+        const withPct = rows.results.map(r => ({ ...r, pct: grandTotal > 0 ? Math.round(r.total_revenue / grandTotal * 100) : 0 }));
+        return { total: grandTotal, categories: withPct };
+      }
+      case 'get_order_by_status': {
+        const status = params.status;
+        if (!status) return { error: '請提供狀態' };
+        const rows = await db.prepare('SELECT project_id, contact_name, address, scheduled_date, total_amount, payment_status FROM work_orders WHERE status=? ORDER BY scheduled_date DESC').bind(status).all();
+        return { status, count: rows.results.length, orders: rows.results };
+      }
+      case 'get_high_value_orders': {
+        const limit = parseInt(params.limit) || 5;
+        const rows = await db.prepare('SELECT project_id, contact_name, total_amount, status, payment_status, scheduled_date FROM work_orders ORDER BY total_amount DESC LIMIT ?').bind(limit).all();
+        return { limit, orders: rows.results };
+      }
+      case 'search_orders': {
+        const q = params.query;
+        if (!q) return { error: '請提供搜尋關鍵字' };
+        const like = '%' + q + '%';
+        const rows = await db.prepare('SELECT project_id, contact_name, address, total_amount, status, scheduled_date FROM work_orders WHERE project_id LIKE ? OR contact_name LIKE ? OR address LIKE ? OR contact_phone LIKE ? ORDER BY scheduled_date DESC LIMIT 20').bind(like, like, like, like).all();
+        return { query: q, count: rows.results.length, orders: rows.results };
+      }
+      default:
+        return { error: '未知工具: ' + tool };
+    }
+  } catch (e) {
+    return { error: '查詢錯誤: ' + (e.message || String(e)) };
+  }
+}
+
+// ─── Page: Map + Calendar// ─── Page: Map + Calendar ─────────────────────────────────────────────────
 async function mapPage(env, url) {
   const dateFrom = url.searchParams.get('from') || '';
   const dateTo = url.searchParams.get('to') || '';
