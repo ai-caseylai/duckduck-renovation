@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}排程 — DUCKDUCK 裝修{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>📅 排程管理</h1>
+    <p>
+        未來
+        <select onchange="location.href='?days='+this.value" style="width:auto;display:inline">
+            <option value="1" {% if days==1 %}selected{% endif %}>1</option>
+            <option value="3" {% if days==3 %}selected{% endif %}>3</option>
+            <option value="7" {% if days==7 %}selected{% endif %}>7</option>
+            <option value="14" {% if days==14 %}selected{% endif %}>14</option>
+            <option value="30" {% if days==30 %}selected{% endif %}>30</option>
+        </select>
+        天 · 共 {{ schedule|length }} 張工單
+    </p>
+</div>
+
+<div class="card">
+    {% if schedule %}
+    <table>
+        <thead>
+            <tr>
+                <th>日期</th>
+                <th>時間</th>
+                <th>項目編號</th>
+                <th>客戶</th>
+                <th>電話</th>
+                <th>地址</th>
+                <th style="text-align:right">費用</th>
+                <th>狀態</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for s in schedule %}
+        <tr>
+            <td><b>{{ s.scheduled_date }}</b></td>
+            <td>{{ s.time_slot or '-' }}</td>
+            <td><a href="/orders/{{ s.project_id }}" class="link">{{ s.project_id }}</a></td>
+            <td>{{ s.contact_name or '-' }}</td>
+            <td style="font-size:12px;color:var(--text-muted)">{{ s.contact_phone or '-' }}</td>
+            <td>{{ s.address[:22] if s.address else '-' }}</td>
+            <td style="text-align:right;font-weight:600">{% if s.total_amount %}${{ "{:,.0f}".format(s.total_amount) }}{% else %}-{% endif %}</td>
+            <td>
+                {% set cls = {'待處理':'badge-pending','已確認':'badge-confirm','已完成':'badge-done','已取消':'badge-cancel'}.get(s.status, 'badge-pending') %}
+                <span class="badge {{ cls }}">{{ s.status }}</span>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+        <div class="icon">🎉</div>
+        <p>未來 {{ days }} 天沒有排程</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

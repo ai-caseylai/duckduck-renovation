@@ -1,0 +1,13 @@
+#!/bin/bash
+# DUCKDUCK 裝修 — 工單追蹤 CLI + Web
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ "$1" = "web" ]; then
+    echo "🏗️  DUCKDUCK 裝修 Web 啟動: http://localhost:5050"
+    source wo_tracker/venv/bin/activate 2>/dev/null
+    exec python3 -m wo_tracker.app
+else
+    source wo_tracker/venv/bin/activate 2>/dev/null
+    exec python3 -m wo_tracker "$@"
+fi

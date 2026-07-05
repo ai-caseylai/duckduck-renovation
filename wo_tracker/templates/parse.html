@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}匯入工單 — DUCKDUCK 裝修{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>📥 匯入工單</h1>
+    <p>貼上 Michael Chan 的 WhatsApp 工單訊息，或上傳文字檔</p>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <h2 style="font-size:16px;margin-bottom:16px">📝 貼上訊息</h2>
+        <form method="post" enctype="multipart/form-data">
+            <div class="form-group">
+                <textarea name="text" placeholder="DUCKDUCK維修工程
+項目編號:C20260706001
+
+時間:
+明早(6/7)星期一9:00到
+地址:
+旺角彌敦道100號5樓A室
+聯絡:
+張生 9123 4567
+
+維修項目:
+1.
+換廁所抽氣扇$1500
+2.
+裝窗簾路軌*2條共$400
+
+費用:
+$1900(未付)
+
+付款方式:
+現金/轉數快90195352
+CHAN KIN CHUNG">{{ text or '' }}</textarea>
+            </div>
+            <div class="form-group">
+                <label>或上傳檔案 (.txt)</label>
+                <input type="file" name="file" accept=".txt,text/plain">
+            </div>
+            <button type="submit" class="btn btn-primary">🔍 解析並匯入</button>
+        </form>
+    </div>
+
+    <div>
+        {% if results %}
+        <div class="card">
+            <h2 style="font-size:16px;margin-bottom:12px;color:#166534">✅ 成功匯入 {{ count }} 張工單</h2>
+            {% for o in results %}
+            <div class="result-card">
+                <h3><a href="/orders/{{ o.project_id }}" class="link">{{ o.project_id }}</a></h3>
+                <div style="font-size:13px;margin-bottom:4px">
+                    📅 {{ o.scheduled_date or '-' }} {{ o.time_slot or '' }} · 📍 {{ o.address or '-' }}
+                </div>
+                <div style="font-size:13px;margin-bottom:4px">
+                    👤 {{ o.contact_name or '-' }} 📞 {{ o.contact_phone or '-' }}
+                </div>
+                <div class="items">
+                    {% for item in o.item_list %}
+                    {{ item.seq }}. {{ item.description[:30] }}{% if item.item_total %} (${{ "{:,.0f}".format(item.item_total) }}){% endif %}{% if not loop.last %} · {% endif %}
+                    {% endfor %}
+                </div>
+                <div style="font-weight:600;margin-top:4px;font-size:14px">
+                    💰 ${{ "{:,.0f}".format(o.total_amount) if o.total_amount else 0 }}
+                </div>
+            </div>
+            {% endfor %}
+            <a href="/orders" class="btn btn-outline btn-sm" style="margin-top:12px">📋 查看工單列表</a>
+        </div>
+        {% else %}
+        <div class="card">
+            <h2 style="font-size:16px;margin-bottom:12px">📋 格式說明</h2>
+            <div style="font-size:13px;color:var(--text-muted);line-height:1.8">
+                <p>系統支援 Michael Chan 的標準工單格式：</p>
+                <ul style="padding-left:20px;margin-top:8px">
+                    <li>✅ <b>項目編號</b> — 自動辨識</li>
+                    <li>✅ <b>日期時間</b> — (4/7) / 明早 / 10:00返工即做</li>
+                    <li>✅ <b>地址</b></li>
+                    <li>✅ <b>聯絡人 + 電話</b></li>
+                    <li>✅ <b>維修項目</b> — 支援 1. / 1， / $xxx/數量</li>
+                    <li>✅ <b>備註</b></li>
+                    <li>✅ <b>費用 + 付款狀態</b></li>
+                    <li>✅ <b>付款方式</b></li>
+                </ul>
+                <p style="margin-top:12px">⚠️ 可以一次貼上多張工單（以 DUCKDUCK維修工程 分隔）</p>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}報價分析 — DUCKDUCK 裝修{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>📈 報價分析</h1>
+    <p>營收統計 · 類別分佈 · 價格趨勢</p>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-icon blue">📋</div>
+        <div>
+            <div class="stat-value">{{ revenue.total_orders }}</div>
+            <div class="stat-label">總工單數</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">💰</div>
+        <div>
+            <div class="stat-value">${{ "{:,.0f}".format(revenue.total_revenue) }}</div>
+            <div class="stat-label">總營收</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon amber">⚠️</div>
+        <div>
+            <div class="stat-value">${{ "{:,.0f}".format(revenue.unpaid_amount) }}</div>
+            <div class="stat-label">未收款</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon purple">📊</div>
+        <div>
+            <div class="stat-value">{{ "{:.0f}%".format(revenue.paid_amount / revenue.total_revenue * 100) if revenue.total_revenue > 0 else '0%' }}</div>
+            <div class="stat-label">收款率</div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header"><h2>📅 月度營收趨勢</h2></div>
+        {% if by_month %}
+        <div class="chart-container"><canvas id="revenueChart"></canvas></div>
+        {% else %}
+        <div class="empty">尚無數據</div>
+        {% endif %}
+    </div>
+    <div class="card">
+        <div class="card-header"><h2>🔧 維修類別分佈</h2></div>
+        {% if categories %}
+        <div class="chart-container" style="height:260px"><canvas id="categoryChart"></canvas></div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header"><h2>🔧 類別明細</h2></div>
+        {% if categories %}
+        <table>
+            <thead><tr><th>類別</th><th style="text-align:center">次數</th><th style="text-align:right">營收</th><th style="text-align:right">佔比</th></tr></thead>
+            <tbody>
+            {% for c in categories %}
+            <tr>
+                <td>{{ c.category }}</td>
+                <td style="text-align:center">{{ c.cnt }}</td>
+                <td style="text-align:right;font-weight:600">${{ "{:,.0f}".format(c.total_revenue) }}</td>
+                <td style="text-align:right">{{ "{:.1f}%".format(c.total_revenue / revenue.total_revenue * 100) if revenue.total_revenue > 0 else '0%' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header"><h2>👥 客戶貢獻</h2></div>
+        {% if contacts %}
+        <table>
+            <thead><tr><th>客戶</th><th style="text-align:center">單數</th><th style="text-align:right">總消費</th></tr></thead>
+            <tbody>
+            {% for c in contacts[:10] %}
+            <tr>
+                <td>{{ c.name or '未知' }}</td>
+                <td style="text-align:center">{{ c.order_count }}</td>
+                <td style="text-align:right;font-weight:600">${{ "{:,.0f}".format(c.total_spent) }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+
+{% if prices %}
+<div class="card">
+    <div class="card-header"><h2>💰 歷史價格參考</h2></div>
+    <table>
+        <thead><tr><th>類別</th><th>項目</th><th style="text-align:center">次數</th><th style="text-align:right">均價</th><th style="text-align:right">最低</th><th style="text-align:right">最高</th></tr></thead>
+        <tbody>
+        {% for p in prices %}
+        <tr>
+            <td>{{ p.category }}</td>
+            <td>{{ p.description[:35] }}</td>
+            <td style="text-align:center">{{ p.cnt }}</td>
+            <td style="text-align:right;font-weight:600">${{ "{:,.0f}".format(p.avg_price) }}</td>
+            <td style="text-align:right;color:var(--text-muted)">${{ "{:,.0f}".format(p.min_price) }}</td>
+            <td style="text-align:right;color:var(--text-muted)">${{ "{:,.0f}".format(p.max_price) }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<script>
+{% if by_month %}
+new Chart(document.getElementById('revenueChart'), {
+    type: 'bar',
+    data: {
+        labels: [{% for m in by_month %}'{{ m.month }}'{% if not loop.last %},{% endif %}{% endfor %}],
+        datasets: [{
+            label: '營收 ($)',
+            data: [{% for m in by_month %}{{ m.total }}{% if not loop.last %},{% endif %}{% endfor %}],
+            backgroundColor: '#2563eb',
+            borderRadius: 6,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { ticks: { callback: v => '$' + v.toLocaleString() } } }
+    }
+});
+{% endif %}
+{% if categories %}
+new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: {
+        labels: [{% for c in categories %}'{{ c.category }}'{% if not loop.last %},{% endif %}{% endfor %}],
+        datasets: [{
+            data: [{% for c in categories %}{{ c.total_revenue }}{% if not loop.last %},{% endif %}{% endfor %}],
+            backgroundColor: ['#2563eb','#16a34a','#f59e0b','#dc2626','#7c3aed','#06b6d4','#ec4899'],
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12 } } }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}

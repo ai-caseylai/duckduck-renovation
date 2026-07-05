@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "DUCKDUCK 裝修",
+    "slug": "duckduck-reno",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": { "backgroundColor": "#1a1d23" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.duckduck.reno" },
+    "android": { "adaptiveIcon": { "backgroundColor": "#1a1d23" }, "package": "com.duckduck.reno" },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

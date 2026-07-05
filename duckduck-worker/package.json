@@ -1,0 +1,11 @@
+{
+  "name": "duckduck-reno",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "db:create": "wrangler d1 create duckduck-db",
+    "db:migrate": "wrangler d1 execute duckduck-db --file=./schema.sql"
+  }
+}

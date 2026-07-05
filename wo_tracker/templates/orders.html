@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}工單列表 — DUCKDUCK 裝修{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>📋 工單列表</h1>
+    <p>共 {{ orders|length }} 張工單 · 總費用 ${{ "{:,.0f}".format(total_amount) }} · 未收 ${{ "{:,.0f}".format(unpaid_amount) }}</p>
+</div>
+
+<div class="card">
+    <div class="toolbar">
+        <select onchange="location.href='?status='+this.value+'&search={{ search }}&date_from={{ date_from }}&date_to={{ date_to }}'">
+            <option value="">全部狀態</option>
+            <option value="待處理" {% if status == '待處理' %}selected{% endif %}>待處理</option>
+            <option value="已確認" {% if status == '已確認' %}selected{% endif %}>已確認</option>
+            <option value="已完成" {% if status == '已完成' %}selected{% endif %}>已完成</option>
+            <option value="已取消" {% if status == '已取消' %}selected{% endif %}>已取消</option>
+        </select>
+        <input type="date" value="{{ date_from }}" onchange="location.href='?status={{ status }}&search={{ search }}&date_from='+this.value+'&date_to={{ date_to }}'" style="width:140px" placeholder="開始日期">
+        <input type="date" value="{{ date_to }}" onchange="location.href='?status={{ status }}&search={{ search }}&date_from={{ date_from }}&date_to='+this.value" style="width:140px" placeholder="結束日期">
+        <form method="get" style="display:flex;gap:10px;align-items:center">
+            <input type="hidden" name="status" value="{{ status }}">
+            <input type="hidden" name="date_from" value="{{ date_from }}">
+            <input type="hidden" name="date_to" value="{{ date_to }}">
+            <input type="text" name="search" value="{{ search }}" placeholder="搜尋編號/客戶/地址..." style="width:200px">
+            <button type="submit" class="btn btn-outline btn-sm">搜尋</button>
+        </form>
+    </div>
+
+    {% if orders %}
+    <table>
+        <thead>
+            <tr>
+                <th>項目編號</th>
+                <th>日期</th>
+                <th>時間</th>
+                <th>客戶</th>
+                <th>地址</th>
+                <th style="text-align:right">費用</th>
+                <th>付款</th>
+                <th>狀態</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for o in orders %}
+        <tr>
+            <td><a href="/orders/{{ o.project_id }}" class="link">{{ o.project_id }}</a></td>
+            <td>{{ o.scheduled_date or '-' }}</td>
+            <td>{{ o.time_slot or '-' }}</td>
+            <td>{{ o.contact_name or '-' }}</td>
+            <td>{{ o.address[:22] if o.address else '-' }}</td>
+            <td style="text-align:right;font-weight:600">{% if o.total_amount %}${{ "{:,.0f}".format(o.total_amount) }}{% else %}-{% endif %}</td>
+            <td>
+                {% if o.payment_status == '已付' %}
+                <span class="badge badge-paid">已付</span>
+                {% else %}
+                <span class="badge badge-unpaid">未付</span>
+                {% endif %}
+            </td>
+            <td>
+                {% set cls = {'待處理':'badge-pending','已確認':'badge-confirm','已完成':'badge-done','已取消':'badge-cancel'}.get(o.status, 'badge-pending') %}
+                <span class="badge {{ cls }}">{{ o.status }}</span>
+            </td>
+            <td>
+                <div class="btn-group">
+                    <select onchange="updateStatus('{{ o.project_id }}', this.value)" class="btn-outline btn-sm" style="width:auto;padding:4px 8px;font-size:11px">
+                        <option value="">⚙️</option>
+                        <option value="待處理">待處理</option>
+                        <option value="已確認">已確認</option>
+                        <option value="已完成">已完成</option>
+                        <option value="已取消">已取消</option>
+                    </select>
+                    <select onchange="updatePayment('{{ o.project_id }}', this.value)" class="btn-outline btn-sm" style="width:auto;padding:4px 8px;font-size:11px">
+                        <option value="">💳</option>
+                        <option value="已付">已付</option>
+                        <option value="未付">未付</option>
+                    </select>
+                </div>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty">
+        <div class="icon">📭</div>
+        <p>沒有符合條件的工單</p>
+        <a href="/parse" class="btn btn-primary" style="margin-top:12px">📥 匯入工單</a>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+async function updateStatus(pid, status) {
+    if (!status) return;
+    await fetch('/orders/' + pid + '/status', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: status})
+    });
+    location.reload();
+}
+async function updatePayment(pid, payment) {
+    if (!payment) return;
+    await fetch('/orders/' + pid + '/status', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({payment: payment})
+    });
+    location.reload();
+}
+</script>
+{% endblock %}

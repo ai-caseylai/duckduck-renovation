@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}{{ wo.project_id }} — DUCKDUCK 裝修{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+        <div>
+            <h1>📋 {{ wo.project_id }}</h1>
+            <p>接收時間: {{ wo.received_at }}</p>
+        </div>
+        <div class="btn-group">
+            <form method="post" action="/orders/{{ wo.project_id }}/delete" onsubmit="return confirm('確定刪除 {{ wo.project_id }}？')" style="display:inline">
+                <button class="btn btn-danger btn-sm">🗑️ 刪除</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <h2 style="font-size:16px;margin-bottom:16px">📌 基本資料</h2>
+        <table style="font-size:14px">
+            <tr><td style="width:80px;color:var(--text-muted);padding:6px 0">日期</td><td style="padding:6px 0;font-weight:500">{{ wo.scheduled_date or '-' }}  {{ wo.time_slot or '' }}</td></tr>
+            <tr><td style="color:var(--text-muted);padding:6px 0">地址</td><td style="padding:6px 0;font-weight:500">{{ wo.address or '-' }}</td></tr>
+            <tr><td style="color:var(--text-muted);padding:6px 0">聯絡</td><td style="padding:6px 0;font-weight:500">{{ wo.contact_name or '-' }}  📞 {{ wo.contact_phone or '-' }}</td></tr>
+            <tr><td style="color:var(--text-muted);padding:6px 0">費用</td><td style="padding:6px 0;font-weight:700;font-size:18px;color:var(--primary)">{% if wo.total_amount %}${{ "{:,.0f}".format(wo.total_amount) }}{% else %}-{% endif %}</td></tr>
+            <tr><td style="color:var(--text-muted);padding:6px 0">付款</td><td style="padding:6px 0">{{ wo.payment_method or '-' }}</td></tr>
+            <tr><td style="color:var(--text-muted);padding:6px 0">狀態</td><td style="padding:6px 0">
+                {% set cls = {'待處理':'badge-pending','已確認':'badge-confirm','已完成':'badge-done','已取消':'badge-cancel'}.get(wo.status, 'badge-pending') %}
+                <span class="badge {{ cls }}">{{ wo.status }}</span>
+                {% if wo.payment_status == '已付' %}<span class="badge badge-paid" style="margin-left:4px">已付</span>{% else %}<span class="badge badge-unpaid" style="margin-left:4px">未付</span>{% endif %}
+            </td></tr>
+        </table>
+
+        <div style="margin-top:16px">
+            <label style="font-size:13px;font-weight:500;margin-bottom:4px;display:block">快速更新</label>
+            <div class="btn-group">
+                <button onclick="quickUpdate('{{ wo.project_id }}', '已完成', '已付')" class="btn btn-primary btn-sm">✅ 完成+已付</button>
+                <button onclick="quickUpdate('{{ wo.project_id }}', '已完成', '')" class="btn btn-outline btn-sm">✅ 完成</button>
+                <button onclick="quickUpdate('{{ wo.project_id }}', '已取消', '')" class="btn btn-outline btn-sm">❌ 取消</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 style="font-size:16px;margin-bottom:16px">🔧 維修項目</h2>
+        {% if wo.item_list %}
+        <table>
+            <thead><tr><th style="width:30px">#</th><th>項目</th><th style="width:50px;text-align:center">數量</th><th style="width:80px;text-align:right">金額</th></tr></thead>
+            <tbody>
+            {% for item in wo.item_list %}
+            <tr>
+                <td>{{ item.seq }}</td>
+                <td>{{ item.description }}</td>
+                <td style="text-align:center">{{ item.quantity if item.quantity != 1 else '-' }}</td>
+                <td style="text-align:right;font-weight:600">{% if item.item_total %}${{ "{:,.0f}".format(item.item_total) }}{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">無明細項目</div>
+        {% endif %}
+    </div>
+</div>
+
+{% if wo.notes %}
+<div class="card">
+    <h2 style="font-size:16px;margin-bottom:8px">📝 備註</h2>
+    <p style="color:var(--text-muted);line-height:1.6">{{ wo.notes }}</p>
+</div>
+{% endif %}
+
+<div class="card">
+    <h2 style="font-size:16px;margin-bottom:8px">📄 原始訊息</h2>
+    <pre style="background:#f8fafc;padding:16px;border-radius:8px;font-size:12px;line-height:1.6;overflow-x:auto;white-space:pre-wrap">{{ wo.raw_text }}</pre>
+</div>
+
+<script>
+async function quickUpdate(pid, status, payment) {
+    const body = {status: status};
+    if (payment) body.payment = payment;
+    await fetch('/orders/' + pid + '/status', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body)
+    });
+    location.reload();
+}
+</script>
+{% endblock %}

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}儀表板 — DUCKDUCK 裝修{% endblock %}
+{% block content %}
+<div class="page-header">
+    <h1>📊 儀表板</h1>
+    <p>{{ now }} · 即時概覽</p>
+</div>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="stat-icon blue">📋</div>
+        <div>
+            <div class="stat-value">{{ stats.total_orders }}</div>
+            <div class="stat-label">總工單數</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon green">💰</div>
+        <div>
+            <div class="stat-value">${{ "{:,.0f}".format(stats.total_revenue) }}</div>
+            <div class="stat-label">總營收</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon amber">⚠️</div>
+        <div>
+            <div class="stat-value">${{ "{:,.0f}".format(stats.unpaid) }}</div>
+            <div class="stat-label">未收款</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon red">📅</div>
+        <div>
+            <div class="stat-value">{{ stats.today_count }}</div>
+            <div class="stat-label">今日工單</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon purple">🗓️</div>
+        <div>
+            <div class="stat-value">{{ stats.week_count }}</div>
+            <div class="stat-label">本週排程</div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header">
+            <h2>📅 今日排程</h2>
+        </div>
+        {% if today_orders %}
+        <table>
+            <thead><tr><th>編號</th><th>時間</th><th>客戶</th><th>地址</th><th>費用</th></tr></thead>
+            <tbody>
+            {% for o in today_orders %}
+            <tr>
+                <td><a href="/orders/{{ o.project_id }}" class="link">{{ o.project_id }}</a></td>
+                <td>{{ o.time_slot or '-' }}</td>
+                <td>{{ o.contact_name or '-' }}</td>
+                <td>{{ o.address[:18] if o.address else '-' }}</td>
+                <td>{% if o.total_amount %}${{ "{:,.0f}".format(o.total_amount) }}{% else %}-{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty"><div class="icon">🎉</div>今日無排程</div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2>🗓️ 本週排程</h2>
+            <a href="/schedule" class="link">全部 →</a>
+        </div>
+        {% if week_orders %}
+        <table>
+            <thead><tr><th>日期</th><th>時間</th><th>客戶</th><th>地址</th></tr></thead>
+            <tbody>
+            {% for o in week_orders[:8] %}
+            <tr>
+                <td>{{ o.scheduled_date or '-' }}</td>
+                <td>{{ o.time_slot or '-' }}</td>
+                <td>{{ o.contact_name or '-' }}</td>
+                <td>{{ o.address[:18] if o.address else '-' }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty"><div class="icon">📭</div>本週暫無排程</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h2>📈 月度營收趨勢</h2>
+    </div>
+    {% if by_month %}
+    <div class="chart-container">
+        <canvas id="revenueChart"></canvas>
+    </div>
+    {% else %}
+    <div class="empty">尚無月度數據</div>
+    {% endif %}
+</div>
+
+<div class="grid-2">
+    <div class="card">
+        <div class="card-header">
+            <h2>🔧 維修類別分佈</h2>
+        </div>
+        {% if categories %}
+        <div class="chart-container" style="height:240px">
+            <canvas id="categoryChart"></canvas>
+        </div>
+        {% else %}
+        <div class="empty">尚無數據</div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h2>🕐 最近工單</h2>
+            <a href="/orders" class="link">全部 →</a>
+        </div>
+        {% if recent %}
+        <table>
+            <thead><tr><th>編號</th><th>客戶</th><th>費用</th><th>狀態</th></tr></thead>
+            <tbody>
+            {% for o in recent %}
+            <tr>
+                <td><a href="/orders/{{ o.project_id }}" class="link">{{ o.project_id }}</a></td>
+                <td>{{ o.contact_name or '-' }}</td>
+                <td>{% if o.total_amount %}${{ "{:,.0f}".format(o.total_amount) }}{% else %}-{% endif %}</td>
+                <td>
+                    {% set cls = {'待處理':'badge-pending','已確認':'badge-confirm','已完成':'badge-done','已取消':'badge-cancel'}.get(o.status, 'badge-pending') %}
+                    <span class="badge {{ cls }}">{{ o.status }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Revenue chart
+{% if by_month %}
+new Chart(document.getElementById('revenueChart'), {
+    type: 'bar',
+    data: {
+        labels: [{% for m in by_month %}'{{ m.month }}'{% if not loop.last %},{% endif %}{% endfor %}],
+        datasets: [{
+            label: '營收 ($)',
+            data: [{% for m in by_month %}{{ m.total }}{% if not loop.last %},{% endif %}{% endfor %}],
+            backgroundColor: '#2563eb',
+            borderRadius: 6,
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { ticks: { callback: v => '$' + v.toLocaleString() } }
+        }
+    }
+});
+{% endif %}
+
+// Category pie chart
+{% if categories %}
+new Chart(document.getElementById('categoryChart'), {
+    type: 'doughnut',
+    data: {
+        labels: [{% for c in categories %}'{{ c.category }}'{% if not loop.last %},{% endif %}{% endfor %}],
+        datasets: [{
+            data: [{% for c in categories %}{{ c.total_revenue }}{% if not loop.last %},{% endif %}{% endfor %}],
+            backgroundColor: ['#2563eb','#16a34a','#f59e0b','#dc2626','#7c3aed','#06b6d4','#ec4899'],
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, padding: 12, font: { size: 11 } } }
+        }
+    }
+});
+{% endif %}
+</script>
+{% endblock %}
