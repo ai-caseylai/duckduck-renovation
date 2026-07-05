@@ -1287,6 +1287,19 @@ async function mobileAPI(env, url) {
     return Response.json(results);
   }
 
+  // Sync contacts from work_orders
+  if (sub === '/sync-contacts') {
+    const orders = await env.DB.prepare('SELECT DISTINCT contact_name, contact_phone, address FROM work_orders WHERE contact_phone IS NOT NULL AND contact_phone != ""').all();
+    let count = 0;
+    for (const o of orders.results) {
+      if (o.contact_phone) {
+        await env.DB.prepare("INSERT INTO contacts(name,phone,address,last_order_at) VALUES(?,?,?,datetime('now')) ON CONFLICT(phone) DO UPDATE SET name=excluded.name,address=excluded.address,last_order_at=datetime('now')").bind(o.contact_name, o.contact_phone, o.address).run();
+        count++;
+      }
+    }
+    return Response.json({ synced: count, contacts: orders.results });
+  }
+
   return Response.json({ error: 'Unknown endpoint' }, { status: 404 });
 }
 
