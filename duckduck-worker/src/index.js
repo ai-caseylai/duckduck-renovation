@@ -596,6 +596,45 @@ async function chatAPI(req, env) {
     handled = true;
   }
 
+  // Write operations (must be before status/other queries)
+  if (projectId && msg.includes('已完成') && (msg.includes('標記') || msg.includes('改為') || msg.includes('設為') || msg.includes('將'))) {
+    await env.DB.prepare('UPDATE work_orders SET status=? WHERE project_id=?').bind('已完成', projectId).run();
+    const updated = await env.DB.prepare('SELECT * FROM work_orders WHERE project_id=?').bind(projectId).first();
+    extraContext = '已更新工單：\n' + JSON.stringify(updated, null, 2);
+    handled = true;
+  }
+  else if (projectId && msg.includes('已確認') && (msg.includes('標記') || msg.includes('改為') || msg.includes('設為') || msg.includes('將'))) {
+    await env.DB.prepare('UPDATE work_orders SET status=? WHERE project_id=?').bind('已確認', projectId).run();
+    const updated = await env.DB.prepare('SELECT * FROM work_orders WHERE project_id=?').bind(projectId).first();
+    extraContext = '已更新工單：\n' + JSON.stringify(updated, null, 2);
+    handled = true;
+  }
+  else if (projectId && msg.includes('已取消') && (msg.includes('標記') || msg.includes('改為') || msg.includes('設為') || msg.includes('將'))) {
+    await env.DB.prepare('UPDATE work_orders SET status=? WHERE project_id=?').bind('已取消', projectId).run();
+    const updated = await env.DB.prepare('SELECT * FROM work_orders WHERE project_id=?').bind(projectId).first();
+    extraContext = '已更新工單：\n' + JSON.stringify(updated, null, 2);
+    handled = true;
+  }
+  else if (projectId && msg.includes('已付') && (msg.includes('標記') || msg.includes('改為') || msg.includes('設為') || msg.includes('將'))) {
+    await env.DB.prepare('UPDATE work_orders SET payment_status=? WHERE project_id=?').bind('已付', projectId).run();
+    const updated = await env.DB.prepare('SELECT * FROM work_orders WHERE project_id=?').bind(projectId).first();
+    extraContext = '已更新工單：\n' + JSON.stringify(updated, null, 2);
+    handled = true;
+  }
+  else if (projectId && (msg.includes('delete') || msg.includes('刪除') || msg.includes('移除'))) {
+    if (msg.includes('確認') || msg.includes('yes') || msg.includes('係')) {
+      await env.DB.prepare('DELETE FROM work_orders WHERE project_id=?').bind(projectId).run();
+      extraContext = '已刪除工單 ' + projectId + '。';
+    } else {
+      directReply = '⚠️ 確定要刪除 ' + projectId + '？此操作無法復原。請回覆「確認刪除 ' + projectId + '」來確認。';
+    }
+    handled = true;
+  }
+  else if (msg.includes('標記') || msg.includes('改為') || msg.includes('更新') || msg.includes('delete') || msg.includes('刪除')) {
+    directReply = '要更新工單狀態，請提供工單編號同新狀態。例如：「將 C020260704001 標記為已完成」或「將 A20260704002 改為已付款」。';
+    handled = true;
+  }
+
   // Client summary
   else if (clientName && (msg.includes('消費') || msg.includes('總共') || msg.includes('電話') || msg.includes('地址') || msg.includes('俾錢') || msg.includes('付款'))) {
     const result = await executeTool(env, 'get_client_summary', { name: clientName });
@@ -639,6 +678,43 @@ async function chatAPI(req, env) {
     const result = await executeTool(env, 'get_category_analysis', {});
     const rev = await executeTool(env, 'get_revenue_by_month', {});
     extraContext = '營收分析：\n類別：' + JSON.stringify(result, null, 2) + '\n月度：' + JSON.stringify(rev, null, 2);
+    handled = true;
+  }
+
+  // Comparison
+  else if (msg.includes('比較')) {
+    const clients = await executeTool(env, 'get_client_list', {});
+    extraContext = '客戶比較數據：\n' + JSON.stringify(clients, null, 2);
+    handled = true;
+  }
+  // Trends / predictions
+  else if (msg.includes('趨勢') || msg.includes('增長') || msg.includes('預測')) {
+    const monthly = await executeTool(env, 'get_revenue_by_month', {});
+    extraContext = '月度趨勢：\n' + JSON.stringify(monthly, null, 2);
+    handled = true;
+  }
+  // Averages
+  else if (msg.includes('平均')) {
+    const s = await env.DB.prepare('SELECT COUNT(*) as cnt, COALESCE(AVG(total_amount),0) as avg, COALESCE(MAX(total_amount),0) as max, COALESCE(MIN(total_amount),0) as min FROM work_orders').first();
+    extraContext = '統計：\n' + JSON.stringify(s, null, 2);
+    handled = true;
+  }
+  // Busiest day
+  else if ((msg.includes('邊日') || msg.includes('幾時')) && (msg.includes('最多') || msg.includes('最忙'))) {
+    const rows = await env.DB.prepare("SELECT scheduled_date, COUNT(*) as cnt, COALESCE(SUM(total_amount),0) as total FROM work_orders WHERE scheduled_date IS NOT NULL GROUP BY scheduled_date ORDER BY cnt DESC LIMIT 10").all();
+    extraContext = '最忙日子：\n' + JSON.stringify(rows.results, null, 2);
+    handled = true;
+  }
+  // Price adjustment impact
+  else if (msg.includes('折扣') || msg.includes('加價') || msg.includes('調價')) {
+    const topClients = await executeTool(env, 'get_client_list', {});
+    extraContext = '客戶消費數據：\n' + JSON.stringify(topClients, null, 2);
+    handled = true;
+  }
+  // Lost/inactive clients
+  else if (msg.includes('流失') || msg.includes('最近冇') || msg.includes('冇幫襯')) {
+    const clients = await executeTool(env, 'get_client_list', {});
+    extraContext = '客戶活躍度：\n' + JSON.stringify(clients, null, 2);
     handled = true;
   }
 
@@ -690,11 +766,7 @@ async function chatAPI(req, env) {
     handled = true;
   }
 
-  // Handle action/command requests
-  else if (msg.includes('標記') || msg.includes('改為') || msg.includes('更新') || msg.includes('delete') || msg.includes('刪除')) {
-    directReply = '要更新工單狀態，請到網頁版工單列表點擊工單，或在工單詳情頁使用狀態按鈕。暫時唔支援透過 chatbot 直接修改。';
-    handled = true;
-  }
+
 
   // ─── Get base stats context ───────────────────────────────────────────
   const stats = await env.DB.prepare('SELECT COUNT(*) as cnt, COALESCE(SUM(total_amount),0) as total FROM work_orders').first();
